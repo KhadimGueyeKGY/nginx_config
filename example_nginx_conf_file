@@ -1,0 +1,96 @@
+worker_processes 5;
+
+# user nginx;
+# 'user nobody nobody;' for systems with 'nobody' as a group instead
+error_log  /net/isilonP/public/rw/<team_dir>/nginx/logs/error.log warn;
+pid /net/isilonP/public/rw/<team_dir>/nginx/nginx.pid;
+
+events {
+  worker_connections 1024; # increase if you have lots of clients
+  accept_mutex off; # set to 'on' if nginx worker_processes > 1
+  # 'use epoll;' to enable for Linux 2.6+
+  # 'use kqueue;' to enable for FreeBSD, OSX
+}
+
+http {
+  charset UTF-8;
+  include ./mime.types;
+  # fallback in case we can't determine a type
+  default_type application/octet-stream;
+  access_log /net/isilonP/public/rw/<team_dir>/nginx/logs/access.log combined;
+  sendfile on;
+
+  client_body_temp_path /net/isilonP/public/rw/<team_dir>/nginx/tmp/client_body;
+  fastcgi_temp_path /net/isilonP/public/rw/<team_dir>/nginx/tmp/fastcgi_temp;
+  proxy_temp_path /net/isilonP/public/rw/<team_dir>/nginx/tmp/proxy_temp;
+  scgi_temp_path /net/isilonP/public/rw/<team_dir>/nginx/tmp/scgi_temp;
+  uwsgi_temp_path /net/isilonP/public/rw/<team_dir>/nginx/tmp/uwsgi_temp;
+
+  upstream app_server {
+    # fail_timeout=0 means we always retry an upstream even if it failed
+    # to return a good HTTP response
+
+    # for UNIX domain socket setups
+    #server unix:/tmp/gunicorn.sock fail_timeout=0;
+
+    # for a TCP configuration
+    server localhost:8000 fail_timeout=0;
+  }
+
+  server {
+    # if no Host match, close the connection to prevent host spoofing
+    listen 8080 default_server;
+    return 444;
+  }
+
+  server {
+    # use 'listen 80 deferred;' for Linux
+    # use 'listen 80 accept_filter=httpready;' for FreeBSD
+    listen 8080;
+    client_max_body_size 4G;
+
+    # set the correct host(s) for your site
+    server_name localhost wp-p2m-xy wp-p2m-xy.ebi.ac.uk www.ebi.ac.uk test.domain.org;
+
+    keepalive_timeout 5;
+
+    # path for static files
+    root /net/isilonP/public/rw/<team_dir>/static_files;
+    location / {
+      # checks for static file, if not found proxy to app
+      try_files $uri /index.html;
+    }
+
+    location = /<team_dir> {
+        return 302 /<team_dir>/;
+    }
+
+    location /<team_dir>/ {
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_set_header Host $http_host;
+          # we don't want nginx trying to do something clever with
+          # redirects, we set the Host: header above already.
+          proxy_redirect off;
+
+      #  try_files $uri @proxy_to_app;
+        proxy_pass http://app_server/;  # note the trailing slash here, it matters!
+    }
+
+    location @proxy_to_app {
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header Host $http_host;
+      # we don't want nginx trying to do something clever with
+      # redirects, we set the Host: header above already.
+      proxy_redirect off;
+      proxy_pass http://app_server;
+    }
+
+    error_page 500 502 503 504 /500.html;
+    location = /500.html {
+      root /net/isilonP/public/rw/<team_dir>/static_files;
+    }
+
+  }
+}

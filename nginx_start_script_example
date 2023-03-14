@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -eux
+
+export HTTPS_PROXY=http://hx-wwwcache.ebi.ac.uk:3128
+export HTTP_PROXY=http://hx-wwwcache.ebi.ac.uk:3128
+export HTTP_PROXY_HOST=hx-wwwcache.ebi.ac.uk
+export HTTP_PROXY_PORT=3128
+
+vmName="wp-p2m-xy"
+
+# start nginx as non root user
+nginx -c /net/isilonP/public/rw/<team_dir>/nginx/nginx.conf -t -q
+nginx -c /net/isilonP/public/rw/<team_dir>/nginx/nginx.conf -p /net/isilonP/public/rw/<team_dir>/nginx/logs/log -g 'daemon on; master_process on;'
